@@ -1,8 +1,9 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getPlayer, createPlayer, updatePlayer } = require('../database');
-const { UPGRADES, MAX_UPGRADE_LEVEL } = require('../config');
+const { UPGRADES } = require('../config'); // Избавились от импорта глобального MAX_UPGRADE_LEVEL
 
 function formatNumber(n) {
+  if (n === undefined || n === null) return '0';
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
@@ -18,18 +19,26 @@ async function handleUpgradeMenu(interaction) {
   }
 
   const fields = [];
-
   const upgradeEntries = [
     { key: 'luck', levelKey: 'luck_level' },
     { key: 'super_luck', levelKey: 'super_luck_level' },
     { key: 'sell_bonus', levelKey: 'sell_bonus_level' },
   ];
 
+  // Определяем уровни игрока заранее для удобства кнопок
+  const pLuckLvl = player.luck_level || 1;
+  const pSLuckLvl = player.super_luck_level || 1;
+  const pSellLvl = player.sell_bonus_level || 1;
+
   for (const entry of upgradeEntries) {
     const upgrade = UPGRADES[entry.key];
     const currentLevel = player[entry.levelKey] || 1;
+    
+    // Динамический макс. уровень на основе конфига конкретной ягоды/навыка
+    const maxLevel = upgrade.multipliers.length; 
+    
     const currentMult = upgrade.multipliers[currentLevel - 1];
-    const isMaxed = currentLevel >= MAX_UPGRADE_LEVEL;
+    const isMaxed = currentLevel >= maxLevel;
     const nextCost = isMaxed ? '—' : formatNumber(upgrade.costs[currentLevel]);
     const nextMult = isMaxed ? '—' : `x${upgrade.multipliers[currentLevel]}`;
 
@@ -42,7 +51,7 @@ async function handleUpgradeMenu(interaction) {
     }
 
     fields.push({
-      name: `${upgrade.name} — Ур. ${currentLevel}/${MAX_UPGRADE_LEVEL}`,
+      name: `${upgrade.name} — Ур. ${currentLevel}/${maxLevel}`, // Теперь пишет корректно (например, 8/8)
       value,
       inline: false,
     });
@@ -55,25 +64,26 @@ async function handleUpgradeMenu(interaction) {
     .setColor(0x9B59B6)
     .setTimestamp();
 
+  // Кнопки теперь отключаются строго по индивидуальным лимитам длины массивов
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`upgrade_luck:${ownerId}`)
-      .setLabel(`🍀 Удача (Ур.${player.luck_level || 1})`)
+      .setLabel(`🍀 Удача (Ур.${pLuckLvl})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.luck_level || 1) >= MAX_UPGRADE_LEVEL),
+      .setDisabled(pLuckLvl >= UPGRADES.luck.multipliers.length),
     new ButtonBuilder()
       .setCustomId(`upgrade_super_luck:${ownerId}`)
-      .setLabel(`⭐ Супер-удача (Ур.${player.super_luck_level || 1})`)
+      .setLabel(`⭐ Супер-удача (Ур.${pSLuckLvl})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.super_luck_level || 1) >= MAX_UPGRADE_LEVEL)
+      .setDisabled(pSLuckLvl >= UPGRADES.super_luck.multipliers.length)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`upgrade_sell_bonus:${ownerId}`)
-      .setLabel(`💰 Продажа (Ур.${player.sell_bonus_level || 1})`)
+      .setLabel(`💰 Продажа (Ур.${pSellLvl})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.sell_bonus_level || 1) >= MAX_UPGRADE_LEVEL),
+      .setDisabled(pSellLvl >= UPGRADES.sell_bonus.multipliers.length),
     new ButtonBuilder()
       .setCustomId(`back_menu:${ownerId}`)
       .setLabel('🔙 Меню')
@@ -105,8 +115,9 @@ async function handleUpgradeBuy(interaction, upgradeType) {
 
   const upgrade = UPGRADES[upgradeType];
   const currentLevel = player[levelKey] || 1;
+  const maxLevel = upgrade.multipliers.length; // Динамический макс. уровень
 
-  if (currentLevel >= MAX_UPGRADE_LEVEL) {
+  if (currentLevel >= maxLevel) {
     const embed = new EmbedBuilder()
       .setTitle('⬆️ Максимальный уровень')
       .setDescription(`${upgrade.name} уже на максимальном уровне!`)
@@ -123,7 +134,6 @@ async function handleUpgradeBuy(interaction, upgradeType) {
     return interaction.update({ embeds: [embed], components: [row], files: [] });
   }
 
-  // Cost is at index currentLevel (costs[0] is for level 1, costs[1] is 1→2, etc.)
   const cost = upgrade.costs[currentLevel];
 
   if (player.coins < cost) {
@@ -146,7 +156,7 @@ async function handleUpgradeBuy(interaction, upgradeType) {
     return interaction.update({ embeds: [embed], components: [row], files: [] });
   }
 
-  // Buy upgrade
+  // Покупка апгрейда
   const newLevel = currentLevel + 1;
   const newMult = upgrade.multipliers[newLevel - 1];
 
@@ -155,7 +165,6 @@ async function handleUpgradeBuy(interaction, upgradeType) {
     coins: player.coins - cost,
   });
 
-  // Re-fetch player to get updated coins balance
   player = getPlayer(userId);
 
   const embed = new EmbedBuilder()

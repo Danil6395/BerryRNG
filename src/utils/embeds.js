@@ -10,6 +10,7 @@ const ASSETS_PATH = path.join(__dirname, '..', '..', 'assets');
  * Format a number with commas: 100000000 → 100,000,000
  */
 function formatNumber(n) {
+  if (n === undefined || n === null) return '0';
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
@@ -156,15 +157,18 @@ function buildSpinResult(berry, rollResult, rollNumber, isSuperLuck, ownerId) {
 function buildUpgradeMenu(player, ownerId) {
   const fields = [];
 
+  // Перебираем апгрейды динамически
   for (const [key, upgrade] of Object.entries(config.UPGRADES)) {
     const levelKey = key === 'luck' ? 'luck_level' : key === 'super_luck' ? 'super_luck_level' : 'sell_bonus_level';
     const currentLevel = player[levelKey] || 1;
+    const maxLevel = upgrade.multipliers.length; // Фикс индивидуального лимита уровней
+    
     const currentMult = upgrade.multipliers[currentLevel - 1];
-    const isMaxed = currentLevel >= config.MAX_UPGRADE_LEVEL;
+    const isMaxed = currentLevel >= maxLevel;
     const nextCost = isMaxed ? '—' : formatNumber(upgrade.costs[currentLevel]);
     const nextMult = isMaxed ? '—' : `x${upgrade.multipliers[currentLevel]}`;
 
-    let value = `Уровень: **${currentLevel}/${config.MAX_UPGRADE_LEVEL}** • Множитель: **x${currentMult}**\n`;
+    let value = `Уровень: **${currentLevel}/${maxLevel}** • Множитель: **x${currentMult}**\n`;
     if (isMaxed) {
       value += `✅ **МАКСИМУМ**`;
     } else {
@@ -181,24 +185,25 @@ function buildUpgradeMenu(player, ownerId) {
     .setColor(0x9B59B6)
     .setTimestamp();
 
+  // Кнопки блокируются строго по реальной длине массива апгрейда
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`upgrade_luck:${ownerId}`)
       .setLabel(`🍀 Удача (Ур.${player.luck_level || 1})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.luck_level || 1) >= config.MAX_UPGRADE_LEVEL),
+      .setDisabled((player.luck_level || 1) >= config.UPGRADES.luck.multipliers.length),
     new ButtonBuilder()
       .setCustomId(`upgrade_super_luck:${ownerId}`)
       .setLabel(`⭐ Супер-удача (Ур.${player.super_luck_level || 1})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.super_luck_level || 1) >= config.MAX_UPGRADE_LEVEL)
+      .setDisabled((player.super_luck_level || 1) >= config.UPGRADES.super_luck.multipliers.length)
   );
   const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`upgrade_sell_bonus:${ownerId}`)
       .setLabel(`💰 Продажа (Ур.${player.sell_bonus_level || 1})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled((player.sell_bonus_level || 1) >= config.MAX_UPGRADE_LEVEL),
+      .setDisabled((player.sell_bonus_level || 1) >= config.UPGRADES.sell_bonus.multipliers.length),
     new ButtonBuilder()
       .setCustomId(`back_menu:${ownerId}`)
       .setLabel('🔙 Меню')
@@ -299,6 +304,9 @@ function buildProfile(player, inventory, uniqueCount, ownerId) {
   const sellMult = config.UPGRADES.sell_bonus.multipliers[(player.sell_bonus_level || 1) - 1];
 
   const rarestRarity = rarestBerry ? getRarity(rarestBerry.rarity) : null;
+  
+  // Динамический подсчет общего числа не-ивентовых ягод вместо хардкода 42
+  const totalAvailableBerries = berries.filter(b => b.rarity !== 'AS').length;
 
   const embed = new EmbedBuilder()
     .setAuthor({ name: player.username, iconURL: player.avatar_url || undefined })
@@ -311,7 +319,7 @@ function buildProfile(player, inventory, uniqueCount, ownerId) {
       { name: '🍀 Удача', value: `Ур.${player.luck_level || 1} (x${luckMult})`, inline: true },
       { name: '⭐ Супер-удача', value: `Ур.${player.super_luck_level || 1} (x${superLuckMult})`, inline: true },
       { name: '💰 Бонус продажи', value: `Ур.${player.sell_bonus_level || 1} (x${sellMult})`, inline: true },
-      { name: '📖 Энциклопедия', value: `${uniqueCount}/42 видов`, inline: true },
+      { name: '📖 Энциклопедия', value: `${uniqueCount}/${totalAvailableBerries} видов`, inline: true }, // Считает верно
       { name: '🏆 Больше всего', value: mostRolledBerry ? `${getRarity(mostRolledBerry.rarity).emoji} ${mostRolledBerry.name} (${formatNumber(mostRolledCount)}x)` : '—', inline: true },
       { name: '💎 Самая редкая', value: rarestBerry ? `${rarestRarity.emoji} ${rarestBerry.name} (1 in ${formatNumber(rarestBerry.chance)})` : '—', inline: true },
     )
