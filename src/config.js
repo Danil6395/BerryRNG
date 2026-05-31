@@ -8,7 +8,8 @@ module.exports = {
     L: { name: 'Legendary', emoji: '🟡', color: 0xFFCA00, order: 4 },
     M: { name: 'Mythic', emoji: '🔴', color: 0x800000, order: 5 },
     CS: { name: 'Cosmic', emoji: '🌌', color: 0x2E0057, order: 6 },
-    S: { name: 'Secret', emoji: '⚫️', color: 0x000000, order: 7 }
+    S: { name: 'Secret', emoji: '⚫️', color: 0x000000, order: 7 },
+    AS: { name: 'Abuse Secret', emoji: '💀', color: 0x8B0000, order: 8 }
   },
 
   // Upgrade definitions

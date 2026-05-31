@@ -38,6 +38,11 @@ db.exec(`
   );
 `);
 
+// Migrate: add pollen columns if missing
+try { db.exec('ALTER TABLE players ADD COLUMN golden_pollen INTEGER DEFAULT 0'); } catch (e) {}
+try { db.exec('ALTER TABLE players ADD COLUMN ultra_pollen INTEGER DEFAULT 0'); } catch (e) {}
+try { db.exec('ALTER TABLE players ADD COLUMN active_pollen TEXT DEFAULT NULL'); } catch (e) {}
+
 // ============================================================
 // Prepared statements
 // ============================================================
@@ -356,6 +361,48 @@ function getGlobalStats() {
   return { rolls, coins, players, berryStats };
 }
 
+/**
+ * Sell berries by specific IDs only. Resets their quantity to 0.
+ * @param {string} userId
+ * @param {string[]} berryIds - array of berry_id to sell
+ * @param {number} totalPrice
+ */
+function sellBerriesByIds(userId, berryIds, totalPrice) {
+  const txn = db.transaction(() => {
+    for (const bid of berryIds) {
+      db.prepare('UPDATE inventory SET quantity = 0 WHERE user_id = ? AND berry_id = ?').run(userId, bid);
+    }
+    stmtAddCoins.run(totalPrice, userId);
+  });
+  txn();
+}
+
+/**
+ * Check if player has at least 1 legendary berry (rarity L) in inventory.
+ * @param {string} userId
+ * @param {object[]} berriesList - the berries array from berries.js
+ * @returns {{ berryId: string, berryName: string }|null}
+ */
+function findLegendaryInInventory(userId, berriesList) {
+  const inventory = stmtGetInventory.all(userId);
+  for (const item of inventory) {
+    if (item.quantity > 0) {
+      const berry = berriesList.find(b => b.id === item.berry_id);
+      if (berry && berry.rarity === 'L') {
+        return { berryId: item.berry_id, berryName: berry.name };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Remove 1 quantity of a berry.
+ */
+function removeBerry(userId, berryId) {
+  db.prepare('UPDATE inventory SET quantity = quantity - 1 WHERE user_id = ? AND berry_id = ? AND quantity > 0').run(userId, berryId);
+}
+
 module.exports = {
   db,
   getPlayer,
@@ -367,6 +414,7 @@ module.exports = {
   getBerryCount,
   sellBerries,
   sellAllBerries,
+  sellBerriesByIds,
   getPlayerBerryIds,
   deletePlayerData,
   deleteAllData,
@@ -377,5 +425,7 @@ module.exports = {
   getLeaderboardByRolls,
   getLeaderboardByCoins,
   getPlayersInventoryForLeaderboard,
-  getGlobalStats
+  getGlobalStats,
+  findLegendaryInInventory,
+  removeBerry
 };

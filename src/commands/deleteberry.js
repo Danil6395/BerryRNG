@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { deletePlayerData, deleteAllData } = require('../database');
 
 module.exports = {
@@ -13,9 +13,9 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        if (interaction.user.id !== process.env.OWNER_ID) {
             return interaction.reply({
-                content: '❌ У вас нет прав.',
+                content: '❌ Только владелец бота может использовать эту команду.',
                 ephemeral: true,
             });
         }

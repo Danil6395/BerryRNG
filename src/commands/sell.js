@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getPlayer, createPlayer, getInventory, sellBerries } = require('../database');
 const berries = require('../berries');
 const { RARITIES, UPGRADES } = require('../config');
+const events = require('../events');
 
 function formatNumber(n) {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -85,7 +86,9 @@ module.exports = {
 
     const sellLevel = player.sell_bonus_level || 1;
     const sellMult = UPGRADES.sell_bonus.multipliers[sellLevel - 1];
-    const earned = Math.floor(berry.price * amount * sellMult);
+    const eventCoinMult = events.getEventCoinMultiplier();
+    const totalMult = sellMult * eventCoinMult;
+    const earned = Math.floor(berry.price * amount * totalMult);
 
     const success = sellBerries(userId, berryId, amount, earned);
     if (!success) {
@@ -99,7 +102,7 @@ module.exports = {
       .setDescription(
         `Вы продали **${amount}x** ${rarity?.emoji || ''} **${berry.name}**\n\n` +
         `💵 Заработано: **${formatNumber(earned)}** 🪙\n` +
-        `📈 Бонус продажи: **x${sellMult}**`
+        `📈 Бонус продажи: **x${totalMult}**`
       )
       .setColor(0xF1C40F)
       .setTimestamp();

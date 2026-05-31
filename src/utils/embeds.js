@@ -2,6 +2,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBu
 const path = require('path');
 const config = require('../config');
 const berries = require('../berries');
+const events = require('../events');
 
 const ASSETS_PATH = path.join(__dirname, '..', '..', 'assets');
 
@@ -23,16 +24,40 @@ function getRarity(rarityKey) {
  * Build the main menu embed and buttons
  */
 function buildMainMenu(player, ownerId) {
+  // Build events status line
+  const activeEvents = events.getActiveEvents();
+  let eventsLine = '';
+  if (activeEvents.length > 0) {
+    eventsLine += '\n━━━━━━━━━━━━━━━━━━━━\n';
+    for (const ev of activeEvents) {
+      const mins = Math.ceil(ev.remainingSec / 60);
+      if (ev.type === 'lucky') eventsLine += `🍀 Ивент удачи: **x${ev.multiplier}** (${mins}м)\n`;
+      if (ev.type === 'coins') eventsLine += `🪙 Ивент монет: **x${ev.multiplier}** (${mins}м)\n`;
+      if (ev.type === 'secrets') eventsLine += `💀 ABUSE Секретки! (${mins}м)\n`;
+    }
+  }
+
+  // Pollen status
+  let pollenLine = '';
+  if (player.active_pollen) {
+    const pName = player.active_pollen === 'golden' ? '🟡 Обычная (x2500)' : '🔵 Ультра (x30000)';
+    pollenLine = `\n✨ Пыльца: **${pName}** — следующий ролл!`;
+  }
+
+  const totalBerries = berries.filter(b => b.rarity !== 'AS').length;
+
   const embed = new EmbedBuilder()
     .setTitle('🍓 BerryRNG')
     .setDescription(
       `Добро пожаловать, **${player.username}**!\n\n` +
       `🎰 Роллов: **${formatNumber(player.total_rolls)}**\n` +
-      `🪙 Монет: **${formatNumber(player.coins)}**\n\n` +
-      `Жми **Крутить** чтобы испытать удачу!`
+      `🪙 Монет: **${formatNumber(player.coins)}**` +
+      pollenLine +
+      `\n\nЖми **Крутить** чтобы испытать удачу!` +
+      eventsLine
     )
     .setColor(0x2ECC71)
-    .setFooter({ text: 'BerryRNG • Собери все 42 ягоды!' })
+    .setFooter({ text: `BerryRNG • Собери все ${totalBerries} ягоды!` })
     .setTimestamp();
 
   const row1 = new ActionRowBuilder().addComponents(
@@ -65,6 +90,10 @@ function buildMainMenu(player, ownerId) {
     new ButtonBuilder()
       .setCustomId(`local_play:${ownerId}`)
       .setLabel('🌐 Играть Локально')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`seller:${ownerId}`)
+      .setLabel('🐻 Селлер')
       .setStyle(ButtonStyle.Secondary)
   );
 

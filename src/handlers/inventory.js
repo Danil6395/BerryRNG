@@ -1,14 +1,15 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { getPlayer, createPlayer, getInventory, sellAllBerries } = require('../database');
+const { getPlayer, createPlayer, getInventory, sellBerriesByIds } = require('../database');
 const berries = require('../berries');
 const { RARITIES, UPGRADES } = require('../config');
+const events = require('../events');
 
 function formatNumber(n) {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// Rarity display order
-const RARITY_ORDER = ['C', 'U', 'R', 'E', 'L', 'M', 'CS', 'S'];
+const RARITY_ORDER = ['C', 'U', 'R', 'E', 'L', 'M', 'CS', 'S', 'AS'];
+const SECRET_RARITIES = new Set(['S', 'AS']);
 
 async function handleInventory(interaction) {
   const userId = interaction.user.id;
@@ -24,23 +25,32 @@ async function handleInventory(interaction) {
   const inventory = getInventory(userId);
   const sellLevel = player.sell_bonus_level || 1;
   const sellMult = UPGRADES.sell_bonus.multipliers[sellLevel - 1];
+  const eventCoinMult = events.getEventCoinMultiplier();
+  const totalMult = sellMult * eventCoinMult;
 
-  // Group by rarity
   const grouped = {};
-  let totalValue = 0;
-  let hasItems = false;
+  let totalValueNoSecrets = 0;
+  let totalValueSecrets = 0;
+  let hasNonSecrets = false;
+  let hasSecrets = false;
 
   for (const item of inventory) {
     if (item.quantity <= 0) continue;
-    hasItems = true;
 
     const berry = berries.find(b => b.id === item.berry_id);
     if (!berry) continue;
 
     if (!grouped[berry.rarity]) grouped[berry.rarity] = [];
 
-    const itemValue = Math.floor(berry.price * item.quantity * sellMult);
-    totalValue += itemValue;
+    const itemValue = Math.floor(berry.price * item.quantity * totalMult);
+
+    if (SECRET_RARITIES.has(berry.rarity)) {
+      totalValueSecrets += itemValue;
+      hasSecrets = true;
+    } else {
+      totalValueNoSecrets += itemValue;
+      hasNonSecrets = true;
+    }
 
     grouped[berry.rarity].push({
       name: berry.name,
@@ -54,10 +64,14 @@ async function handleInventory(interaction) {
     .setColor(0xF39C12)
     .setTimestamp();
 
+  const hasItems = hasNonSecrets || hasSecrets;
+
   if (!hasItems) {
     embed.setDescription('📦 Инвентарь пуст!\nКрутите рулетку чтобы собрать ягоды.');
   } else {
-    let desc = `💰 Бонус продажи: **x${sellMult}**\n🪙 Монет: **${formatNumber(player.coins)}**\n`;
+    let desc = `💰 Бонус продажи: **x${sellMult}**`;
+    if (eventCoinMult > 1) desc += ` • 🪙 Ивент: **x${eventCoinMult}**`;
+    desc += `\n🪙 Монет: **${formatNumber(player.coins)}**\n`;
 
     for (const rarityKey of RARITY_ORDER) {
       if (!grouped[rarityKey] || grouped[rarityKey].length === 0) continue;
@@ -69,26 +83,37 @@ async function handleInventory(interaction) {
       }
     }
 
-    desc += `\n━━━━━━━━━━━━━━━━━━━━\n💎 **Итого за всё: ${formatNumber(totalValue)} 🪙**`;
+    const totalAll = totalValueNoSecrets + totalValueSecrets;
+    desc += `\n━━━━━━━━━━━━━━━━━━━━\n💎 **Итого: ${formatNumber(totalAll)} 🪙**`;
+    if (hasSecrets) {
+      desc += `\n⚫ Секретки: **${formatNumber(totalValueSecrets)} 🪙** • Остальное: **${formatNumber(totalValueNoSecrets)} 🪙**`;
+    }
     embed.setDescription(desc);
   }
 
-  const row = new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`sell_all:${ownerId}`)
-      .setLabel(`💰 Продать ВСЁ (${formatNumber(totalValue)} 🪙)`)
+      .setCustomId(`sell_no_secrets:${ownerId}`)
+      .setLabel(`💰 Продать ALL (${formatNumber(totalValueNoSecrets)})`)
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(!hasItems),
+      .setDisabled(!hasNonSecrets),
+    new ButtonBuilder()
+      .setCustomId(`sell_secrets:${ownerId}`)
+      .setLabel(`⚫ Продать S/AS (${formatNumber(totalValueSecrets)})`)
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!hasSecrets)
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`back_menu:${ownerId}`)
       .setLabel('🔙 Меню')
-      .setStyle(ButtonStyle.Secondary),
+      .setStyle(ButtonStyle.Secondary)
   );
 
-  await interaction.update({ embeds: [embed], components: [row], files: [] });
+  await interaction.update({ embeds: [embed], components: [row1,row2], files: [] });
 }
 
-async function handleSellAll(interaction) {
+async function handleSellNoSecrets(interaction) {
   const userId = interaction.user.id;
   const parts = interaction.customId.split(':');
   const ownerId = parts[1] || userId;
@@ -102,47 +127,38 @@ async function handleSellAll(interaction) {
   const inventory = getInventory(userId);
   const sellLevel = player.sell_bonus_level || 1;
   const sellMult = UPGRADES.sell_bonus.multipliers[sellLevel - 1];
+  const eventCoinMult = events.getEventCoinMultiplier();
+  const totalMult = sellMult * eventCoinMult;
 
   let totalEarned = 0;
   let totalItems = 0;
+  const berryIdsToSell = [];
 
   for (const item of inventory) {
     if (item.quantity <= 0) continue;
     const berry = berries.find(b => b.id === item.berry_id);
     if (!berry) continue;
-    totalEarned += Math.floor(berry.price * item.quantity * sellMult);
+    if (SECRET_RARITIES.has(berry.rarity)) continue; // skip secrets
+
+    totalEarned += Math.floor(berry.price * item.quantity * totalMult);
     totalItems += item.quantity;
+    berryIdsToSell.push(item.berry_id);
   }
 
   if (totalItems === 0) {
-    const embed = new EmbedBuilder()
-      .setTitle('💰 Продажа')
-      .setDescription('Нечего продавать — инвентарь пуст.')
-      .setColor(0xE74C3C)
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`back_menu:${ownerId}`)
-        .setLabel('🔙 Меню')
-        .setStyle(ButtonStyle.Secondary),
-    );
-
-    return interaction.update({ embeds: [embed], components: [row], files: [] });
+    return interaction.reply({ content: '❌ Нечего продавать (кроме секреток ничего нет).', ephemeral: true });
   }
 
-  // Sell all (pass berries array as 2nd arg per DB signature)
-  sellAllBerries(userId, berries, totalEarned);
-
-  // Re-fetch player to update coins balance
+  sellBerriesByIds(userId, berryIdsToSell, totalEarned);
   player = getPlayer(userId);
 
   const embed = new EmbedBuilder()
-    .setTitle('💰 Всё продано!')
+    .setTitle('💰 Продано (кроме секреток)!')
     .setDescription(
       `Продано **${formatNumber(totalItems)}** ягод.\n\n` +
       `💵 Заработано: **${formatNumber(totalEarned)}** 🪙\n` +
-      `📈 Бонус продажи: **x${sellMult}**`
+      `📈 Бонус: **x${totalMult}**\n` +
+      `Секретные ягоды сохранены.`
     )
     .setColor(0x2ECC71)
     .setTimestamp();
@@ -151,7 +167,7 @@ async function handleSellAll(interaction) {
     new ButtonBuilder()
       .setCustomId(`spin:${ownerId}`)
       .setLabel('🎰 Крутить')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId(`back_menu:${ownerId}`)
       .setLabel('🔙 Меню')
@@ -161,4 +177,67 @@ async function handleSellAll(interaction) {
   await interaction.update({ embeds: [embed], components: [row], files: [] });
 }
 
-module.exports = { handleInventory, handleSellAll };
+async function handleSellSecrets(interaction) {
+  const userId = interaction.user.id;
+  const parts = interaction.customId.split(':');
+  const ownerId = parts[1] || userId;
+
+  let player = getPlayer(userId);
+  if (!player) {
+    createPlayer(userId, interaction.user.username, interaction.user.displayAvatarURL());
+    player = getPlayer(userId);
+  }
+
+  const inventory = getInventory(userId);
+  const sellLevel = player.sell_bonus_level || 1;
+  const sellMult = UPGRADES.sell_bonus.multipliers[sellLevel - 1];
+  const eventCoinMult = events.getEventCoinMultiplier();
+  const totalMult = sellMult * eventCoinMult;
+
+  let totalEarned = 0;
+  let totalItems = 0;
+  const berryIdsToSell = [];
+
+  for (const item of inventory) {
+    if (item.quantity <= 0) continue;
+    const berry = berries.find(b => b.id === item.berry_id);
+    if (!berry) continue;
+    if (!SECRET_RARITIES.has(berry.rarity)) continue; // only secrets
+
+    totalEarned += Math.floor(berry.price * item.quantity * totalMult);
+    totalItems += item.quantity;
+    berryIdsToSell.push(item.berry_id);
+  }
+
+  if (totalItems === 0) {
+    return interaction.reply({ content: '❌ У вас нет секретных ягод.', ephemeral: true });
+  }
+
+  sellBerriesByIds(userId, berryIdsToSell, totalEarned);
+  player = getPlayer(userId);
+
+  const embed = new EmbedBuilder()
+    .setTitle('⚫ Секретки проданы!')
+    .setDescription(
+      `Продано **${formatNumber(totalItems)}** секретных ягод.\n\n` +
+      `💵 Заработано: **${formatNumber(totalEarned)}** 🪙\n` +
+      `📈 Бонус: **x${totalMult}**`
+    )
+    .setColor(0x000000)
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`spin:${ownerId}`)
+      .setLabel('🎰 Крутить')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`back_menu:${ownerId}`)
+      .setLabel('🔙 Меню')
+      .setStyle(ButtonStyle.Secondary),
+  );
+
+  await interaction.update({ embeds: [embed], components: [row], files: [] });
+}
+
+module.exports = { handleInventory, handleSellNoSecrets, handleSellSecrets };

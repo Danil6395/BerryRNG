@@ -1,15 +1,13 @@
 const berries = require('../berries');
 const config = require('../config');
+const events = require('../events');
 
 /**
- * Roll a berry based on player's luck and super luck.
+ * Roll a berry based on player's luck, super luck, pollen, and active events.
  * Algorithm: iterate from rarest to most common, check probability.
- * Luck multiplier slightly increases chance of rare berries.
- * Super luck applies every SUPER_LUCK_INTERVAL rolls.
  * 
- * IMPORTANT: Even at max upgrades (luck x2.2, super luck x5.0),
- * rare berries remain extremely hard to get.
- * Example: Teaberry 1/100M → ~1/45M with max luck, ~1/9M with super luck on top.
+ * AS-rarity berries are ONLY included when a secrets event is active.
+ * Pollen provides a one-time extra multiplier on top of everything.
  */
 
 // Sort berries from rarest to most common (highest chance first)
@@ -17,12 +15,10 @@ const sortedBerries = [...berries].sort((a, b) => b.chance - a.chance);
 
 /**
  * @param {Object} player - Player data from DB
- * @param {number} player.luck_level - 1-5
- * @param {number} player.super_luck_level - 1-5
- * @param {number} player.total_rolls - Current roll count (BEFORE increment)
- * @returns {Object} - Berry object from berries array
+ * @param {number} [pollenMultiplier=1] - One-time pollen multiplier (10 or 100)
+ * @returns {{ berry: Object, isSuperLuck: boolean }}
  */
-function rollBerry(player) {
+function rollBerry(player, pollenMultiplier = 1) {
   const luckLevel = player.luck_level || 1;
   const superLuckLevel = player.super_luck_level || 1;
   const totalRolls = player.total_rolls || 0;
@@ -36,13 +32,22 @@ function rollBerry(player) {
     ? config.UPGRADES.super_luck.multipliers[superLuckLevel - 1] 
     : 1.0;
 
-  // Combined multiplier (applied to reduce the chance denominator)
-  const combinedMultiplier = luckMultiplier * superLuckMultiplier;
+  // Event luck multiplier
+  const eventLuckMult = events.getEventLuckMultiplier();
+
+  // Combined multiplier
+  const combinedMultiplier = luckMultiplier * superLuckMultiplier * eventLuckMult * pollenMultiplier;
+
+  // Check if secrets event is active (AS berries become rollable)
+  const secretEventActive = events.isSecretEventActive();
 
   // Roll for each berry from rarest to most common
   for (const berry of sortedBerries) {
-    // Effective chance: 1 in (chance / combinedMultiplier)
-    // So probability = combinedMultiplier / chance
+    // Skip AS-rarity berries unless secrets event is active
+    if (berry.rarity === 'AS' && !secretEventActive) {
+      continue;
+    }
+
     const probability = combinedMultiplier / berry.chance;
     
     if (Math.random() < probability) {
@@ -50,8 +55,7 @@ function rollBerry(player) {
     }
   }
 
-  // Fallback: return the most common berry (Strawberry, 1 in 3)
-  // This should almost always hit naturally, but just in case
+  // Fallback: return the most common berry (Strawberry)
   const fallback = sortedBerries[sortedBerries.length - 1];
   return { berry: fallback, isSuperLuck };
 }

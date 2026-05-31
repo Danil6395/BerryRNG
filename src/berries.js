@@ -517,5 +517,43 @@ module.exports = [
     origin: 'Вершина Мировой горы',
     season: 'Раз в 1000 лет',
     edible: true
+  },
+  {
+    id: 'starberry',
+    name: 'Starberry',
+    rarity: 'S',
+    chance: 999000999,
+    price: 500000000,
+    file: 'Sstarberry.png',
+    description: 'Звёздная ягода — рождается из падающих звёзд, светится в темноте вечным светом.',
+    origin: 'Звёздное небо',
+    season: 'Звездопад',
+    edible: true
+  },
+
+  // ========== Abuse Secret (AS) — only during events ==========
+  {
+    id: 'pokyku',
+    name: 'Pokyku',
+    rarity: 'AS',
+    chance: 111111111,
+    price: 50000000,
+    file: 'ASpokyku.png',
+    description: 'Покику — ягода богов.',
+    origin: 'Разлом реальности',
+    season: 'Ивент ABUSE',
+    edible: false
+  },
+  {
+    id: 'sixseven',
+    name: 'SixSeven',
+    rarity: 'AS',
+    chance: 75000000,
+    price: 75000000,
+    file: 'ASsixseven.png',
+    description: 'Сикссевен — сикссевен сикссевен сикссевен.',
+    origin: 'Числовая пустота',
+    season: 'Ивент ABUSE',
+    edible: false
   }
 ];

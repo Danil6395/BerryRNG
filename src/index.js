@@ -27,11 +27,12 @@ for (const file of commandFiles) {
 }
 
 // Load handlers
-const { handleSpin } = require('./handlers/spin');
+const { handleSpin, handleActivatePollen } = require('./handlers/spin');
 const { handleUpgradeMenu, handleUpgradeBuy } = require('./handlers/upgrade');
-const { handleInventory, handleSellAll } = require('./handlers/inventory');
+const { handleInventory, handleSellNoSecrets, handleSellSecrets } = require('./handlers/inventory');
 const { handleProfileView } = require('./handlers/profileView');
 const { handleEncyclopedia } = require('./handlers/encyclopedia');
+const { handleSeller, handleBuyGoldenPollen, handleBuyUltraPollen } = require('./handlers/seller');
 
 const db = require('./database');
 const { buildMainMenu } = require('./utils/embeds');
@@ -95,8 +96,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handleUpgradeBuy(interaction, 'sell_bonus');
       } else if (action === 'inventory') {
         await handleInventory(interaction);
+      } else if (action === 'sell_no_secrets') {
+        await handleSellNoSecrets(interaction);
+      } else if (action === 'sell_secrets') {
+        await handleSellSecrets(interaction);
       } else if (action === 'sell_all') {
-        await handleSellAll(interaction);
+        // Legacy support: redirect to sell_no_secrets
+        await handleSellNoSecrets(interaction);
+      } else if (action === 'seller') {
+        await handleSeller(interaction);
+      } else if (action === 'buy_golden_pollen') {
+        await handleBuyGoldenPollen(interaction);
+      } else if (action === 'buy_ultra_pollen') {
+        await handleBuyUltraPollen(interaction);
+      } else if (action === 'activate_golden') {
+        await handleActivatePollen(interaction, 'golden');
+      } else if (action === 'activate_ultra') {
+        await handleActivatePollen(interaction, 'ultra');
       } else if (action === 'profile_view') {
         await handleProfileView(interaction);
       } else if (action === 'encyclopedia') {
@@ -155,13 +171,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
           await interaction.update({
             content: `✅ Игра перенесена в отдельную ветку для пользователя **${interaction.user.username}**!`,
-            embeds: [],      // Очищаем старые эмбеды, если нужно (если нужно оставить старый — просто удали эту строку)
-            components: [],  // ПУСТОЙ МАССИВ убирает все кнопки под сообщением
+            embeds: [],
+            components: [],
           });
 
           await interaction.followUp({
             content: `🍓 Локальная ветка создана! Перейдите сюда для приватной игры: <#${thread.id}>`,
-            flags: [MessageFlags.Ephemeral], // Современный аналог ephemeral: true без варнингов
+            flags: [MessageFlags.Ephemeral],
           });
 
         } catch (error) {

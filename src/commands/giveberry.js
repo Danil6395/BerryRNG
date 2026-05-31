@@ -1,10 +1,10 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { giveCoins, getAllPlayerIds, getPlayer } = require('../database');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('giveberry')
-        .setDescription('🎁 Выдать монеты игроку (Админ)')
+        .setDescription('🎁 Выдать/забрать монеты игроку (Владелец)')
         .addStringOption(option =>
             option
                 .setName('target')
@@ -14,21 +14,32 @@ module.exports = {
         .addIntegerOption(option =>
             option
                 .setName('amount')
-                .setDescription('Количество монет')
+                .setDescription('Количество монет (отрицательное = забрать)')
                 .setRequired(true)
-                .setMinValue(1)
         ),
 
     async execute(interaction) {
-        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        // OWNER_ID check
+        if (interaction.user.id !== process.env.OWNER_ID) {
             return interaction.reply({
-                content: '❌ У вас нет прав.',
+                content: '❌ Только владелец бота может использовать эту команду.',
                 ephemeral: true,
             });
         }
 
         const target = interaction.options.getString('target').trim();
         const amount = interaction.options.getInteger('amount');
+
+        if (amount === 0) {
+            return interaction.reply({
+                content: '❌ Нельзя выдать 0 монет.',
+                ephemeral: true,
+            });
+        }
+
+        const isNegative = amount < 0;
+        const actionWord = isNegative ? 'Забрано' : 'Выдано';
+        const displayAmount = Math.abs(amount);
 
         if (target.toLowerCase() === 'all') {
             const playerIds = getAllPlayerIds();
@@ -38,11 +49,11 @@ module.exports = {
             }
 
             const embed = new EmbedBuilder()
-                .setTitle('🎁 Монеты выданы')
+                .setTitle(isNegative ? '💸 Монеты забраны' : '🎁 Монеты выданы')
                 .setDescription(
-                    `Выдано **${amount.toLocaleString()}** монет всем игрокам (**${playerIds.length}** чел.)`
+                    `${actionWord} **${displayAmount.toLocaleString()}** монет у всех игроков (**${playerIds.length}** чел.)`
                 )
-                .setColor(0x2ECC71)
+                .setColor(isNegative ? 0xE74C3C : 0x2ECC71)
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -69,9 +80,9 @@ module.exports = {
         giveCoins(userId, amount);
 
         const embed = new EmbedBuilder()
-            .setTitle('🎁 Монеты выданы')
-            .setDescription(`Выдано **${amount.toLocaleString()}** монет игроку <@${userId}>.`)
-            .setColor(0x2ECC71)
+            .setTitle(isNegative ? '💸 Монеты забраны' : '🎁 Монеты выданы')
+            .setDescription(`${actionWord} **${displayAmount.toLocaleString()}** монет у игрока <@${userId}>.`)
+            .setColor(isNegative ? 0xE74C3C : 0x2ECC71)
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });
